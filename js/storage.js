@@ -139,7 +139,7 @@ const Store = (function () {
     orientation: 'landscape',
     layoutRatios: {},
     popularSymbols: [
-      'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XAUTUSDT'
+      'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XAUUSDT'
     ],
     allSymbols: [],
     enabledSignalTimeframes: loadSavedSignalTimeframes(),
