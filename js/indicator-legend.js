@@ -10,6 +10,23 @@
  *     này có tín hiệu BUY/SELL MỚI. Lưu qua Store.setPaneSignalAlertEnabled()
  *     - app.js đọc field này (pane.signalAlertEnabled) khi nhận sự kiện
  *     'pane:newSignal' để quyết định có gửi thông báo hay không.
+ *
+ * CẬP NHẬT (đợt fix này) - FIX POPOVER BỊ CHE/CẮT TRÊN IPHONE/IPAD:
+ *   - TRƯỚC ĐÂY: popover là `position: absolute` và là CON của chính cái
+ *     chip (chip.appendChild(popover)). Vì .pane-chart-container có
+ *     `overflow: hidden`, nên hễ popover tràn ra ngoài rìa pane (đặc biệt
+ *     ở layout nhiều ô, pane nhỏ) là bị CẮT CỤT - không cuộn được, không
+ *     bấm được nút "Áp dụng" nằm ở phần bị cắt.
+ *   - FIX: thêm hàm positionPopover() - append popover thẳng vào
+ *     document.body (thoát khỏi overflow:hidden của pane cha), dùng
+ *     `position: fixed` (khai báo ở CSS), rồi tự tính toạ độ dựa trên vị
+ *     trí thật của cái chip trên màn hình (getBoundingClientRect), có
+ *     clamp để không tràn mép trái/phải/trên/dưới và tự lật lên trên nếu
+ *     không đủ chỗ bên dưới. CSS cũng thêm max-height + overflow-y: auto
+ *     để phòng trường hợp nội dung dài hơn cả màn hình.
+ *   - Tất cả các hàm mở popover (openPeriodPopover, openBreakoutSettingsPopover,
+ *     openBBGroupPopover, openRSIGroupPopover, openMACDGroupPopover) đều đổi
+ *     dòng `chip.appendChild(popover)` thành `positionPopover(popover, chip)`.
  */
 
 const IndicatorLegend = (function () {
@@ -175,6 +192,44 @@ const IndicatorLegend = (function () {
     document.querySelectorAll('.indicator-popover').forEach((el) => el.remove());
   }
 
+  /**
+   * FIX MOBILE: append popover thẳng vào document.body (thoát khỏi
+   * overflow:hidden của .pane-chart-container) và tự tính toạ độ dựa trên
+   * vị trí thật của "chip" (anchorEl) trên màn hình. Có clamp để popover
+   * luôn nằm trọn trong viewport - không bị cắt/che ở iPhone/iPad, kể cả
+   * khi chip nằm trong 1 pane nhỏ ở layout 4 ô hoặc ở sát mép màn hình.
+   */
+  function positionPopover(popover, anchorEl) {
+    // Cần đo kích thước thật của popover -> append tạm vào body trước
+    // (đang vô hình về mặt layout vì các popover luôn có nội dung cố định,
+    // nên việc đo ngay sau khi append là an toàn).
+    document.body.appendChild(popover);
+
+    const rect = anchorEl.getBoundingClientRect();
+    const margin = 6;
+    const popRect = popover.getBoundingClientRect();
+
+    let top = rect.bottom + margin;
+    let left = rect.left;
+
+    // Không đủ chỗ bên dưới -> mở lên phía trên chip
+    if (top + popRect.height > window.innerHeight - margin) {
+      top = rect.top - popRect.height - margin;
+    }
+    // Vẫn không đủ (chip ở giữa màn hình nhỏ) -> ép nằm trong viewport,
+    // phần nội dung dư sẽ tự cuộn nhờ overflow-y: auto (đã khai báo CSS).
+    if (top < margin) top = margin;
+
+    // Không để tràn phải/trái
+    if (left + popRect.width > window.innerWidth - margin) {
+      left = window.innerWidth - popRect.width - margin;
+    }
+    if (left < margin) left = margin;
+
+    popover.style.top = `${top}px`;
+    popover.style.left = `${left}px`;
+  }
+
   function openPeriodPopover(chip, paneId, instance, key, item) {
     closeAnyOpenPopover();
 
@@ -223,7 +278,7 @@ const IndicatorLegend = (function () {
     popover.appendChild(label);
     popover.appendChild(input);
     popover.appendChild(actions);
-    chip.appendChild(popover);
+    positionPopover(popover, chip);
 
     input.focus();
     input.select();
@@ -408,7 +463,7 @@ const IndicatorLegend = (function () {
     popover.appendChild(tfContainer);
     popover.appendChild(notifyHint);
     popover.appendChild(actions);
-    chip.appendChild(popover);
+    positionPopover(popover, chip);
 
     lookbackInput.focus();
     lookbackInput.select();
@@ -571,7 +626,7 @@ const IndicatorLegend = (function () {
     popover.appendChild(lowerRow);
     popover.appendChild(actions);
 
-    chip.appendChild(popover);
+    positionPopover(popover, chip);
     periodInput.focus();
     periodInput.select();
   }
@@ -745,7 +800,7 @@ const IndicatorLegend = (function () {
     popover.appendChild(wmaRow);
     popover.appendChild(actions);
 
-    chip.appendChild(popover);
+    positionPopover(popover, chip);
     rsiPeriodInput.focus();
     rsiPeriodInput.select();
   }
@@ -938,7 +993,7 @@ const IndicatorLegend = (function () {
     popover.appendChild(histRow);
     popover.appendChild(actions);
 
-    chip.appendChild(popover);
+    positionPopover(popover, chip);
     fastInput.focus();
     fastInput.select();
   }

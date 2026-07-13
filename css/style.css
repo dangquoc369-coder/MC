@@ -1134,30 +1134,24 @@ body.app-fullscreen #fullscreenExitBtn {
   display: flex;
 }
 .indicator-popover {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
+  position: fixed; /* thoát khỏi overflow:hidden của pane cha */
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px;
   width: 150px;
   box-shadow: var(--shadow-md);
-  z-index: 50;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* NEW: never let content push the popover taller than the viewport */
-  max-height: min(400px, 70vh);
+  max-height: min(420px, 80vh);
   overflow-y: auto;
 }
 
 .indicator-popover.wide {
   width: 210px;
 }
-
-/* NEW: keep Hủy/Áp dụng always visible even while the content above scrolls */
 .indicator-popover-actions {
   position: sticky;
   bottom: -8px;
@@ -1167,20 +1161,4 @@ body.app-fullscreen #fullscreenExitBtn {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
-}
-
-/* NEW: on phones/tablets, detach the breakout popover from the chip and
-   center it as a fixed modal so it's always fully on-screen and reachable,
-   regardless of where the pane/chip sits (top of a tall single-pane chart
-   on iPhone puts the chip near the top, leaving no room below it). */
-@media (max-width: 900px) {
-  .indicator-popover.wide {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 340px);
-    max-height: 80vh;
-    z-index: 1000;
-  }
 }
