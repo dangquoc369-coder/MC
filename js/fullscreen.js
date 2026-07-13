@@ -25,8 +25,15 @@
  *     luôn thanh địa chỉ trên Android Chrome/trình duyệt máy tính) - bọc
  *     trong try/catch, thất bại thì bỏ qua lặng lẽ vì giải pháp CSS ở trên
  *     đã đủ để tính năng hoạt động mọi nơi.
- *   - Thoát bằng: bấm lại nút, phím Esc, hoặc thoát fullscreen hệ thống
- *     (vd nút back Android) - đều được đồng bộ lại đúng trạng thái nút.
+ *   - Thoát bằng: bấm lại nút, phím Esc (desktop), hoặc thoát fullscreen hệ
+ *     thống (vd nút back Android) - đều được đồng bộ lại đúng trạng thái.
+ *   - ĐỢT FIX MỚI: trên mobile không có phím Esc, và nút "⛶" ở topbar cũng
+ *     bị ẩn đi cùng topbar khi đang fullscreen (xem CSS
+ *     body.app-fullscreen #topbar { display: none }) -> người dùng không
+ *     còn cách nào để thoát! Thêm 1 nút "✕" NỔI riêng (#fullscreenExitBtn),
+ *     tạo 1 lần lúc khởi động, luôn nằm ngoài #topbar nên KHÔNG bị ẩn theo -
+ *     chỉ hiện ra (qua CSS `body.app-fullscreen #fullscreenExitBtn`) đúng
+ *     lúc đang fullscreen, ở góc trên-phải, đủ lớn để bấm bằng ngón tay.
  */
 
 const FullscreenModule = (function () {
@@ -115,6 +122,17 @@ const FullscreenModule = (function () {
     return btn;
   }
 
+  function buildExitButton() {
+    const btn = document.createElement('button');
+    btn.id = 'fullscreenExitBtn';
+    btn.type = 'button';
+    btn.title = 'Thoát toàn màn hình';
+    btn.textContent = '✕';
+    btn.addEventListener('click', exit);
+    document.body.appendChild(btn);
+    return btn;
+  }
+
   function mountButton() {
     const btn = buildButton();
     const target = document.querySelector('.topbar-right') || document.getElementById('topbar');
@@ -127,6 +145,11 @@ const FullscreenModule = (function () {
       btn.style.zIndex = '9999';
       document.body.appendChild(btn);
     }
+
+    // Nút thoát nổi - luôn tồn tại trong DOM (kể cả không ở fullscreen),
+    // CSS tự ẩn/hiện theo class 'app-fullscreen' trên <body> (xem
+    // css/style.css) nên không cần JS tạo/huỷ mỗi lần bấm.
+    buildExitButton();
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && isFullscreen) exit();

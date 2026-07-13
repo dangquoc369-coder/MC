@@ -1109,3 +1109,27 @@ body.app-fullscreen #chartArea {
 body.app-fullscreen {
   overflow: hidden;
 }
+/* Nút "✕" thoát fullscreen nổi - luôn hiện khi đang fullscreen, kể cả trên
+   mobile không có phím Esc và topbar (chứa nút ⛶) đã bị ẩn đi. */
+#fullscreenExitBtn {
+  display: none;
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top, 10px));
+  right: max(10px, env(safe-area-inset-right, 10px));
+  z-index: 950;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--overlay-bg-strong);
+  color: var(--text-primary);
+  font-size: 16px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+body.app-fullscreen #fullscreenExitBtn {
+  display: flex;
+}
