@@ -16,6 +16,18 @@
  * ghi chú "FIX (đợt fix này)" bên dưới về lỗi symbol không map được sang
  * Yahoo Finance ticker khiến tính năng này trước đó không hoạt động.
  *
+ * FIX (đợt fix mới nhất - giảm tải Workers KV, đã chạm 50% giới hạn/ngày):
+ *   1) checkSignalsAndNotify() trước đây gửi noti MỖI KHI có nến mới đóng
+ *      thoả điều kiện breakout, kể cả khi vẫn CÙNG CHIỀU với tín hiệu đã báo
+ *      trước đó (vd đang BUY, nến sau vẫn breakout lên -> báo BUY tiếp) ->
+ *      vừa spam thông báo, vừa ghi KV liên tục. Giờ chỉ ghi KV + gửi push khi
+ *      CHIỀU tín hiệu thực sự đảo (BUY -> SELL hoặc ngược lại).
+ *   2) Cron trước đây chạy 2 lần/phút (cách nhau 30s) cho CẢ alerts giá lẫn
+ *      signals BUY/SELL -> nhân đôi số lượt đọc/ghi KV mỗi ngày. Phần
+ *      signals BUY/SELL không cần độ trễ 30s (khung nến ngắn nhất theo dõi
+ *      là 5 phút) nên giờ chỉ chạy 1 lần/phút. Alerts giá vẫn giữ 2 lần/phút
+ *      như cũ vì cần phản ứng nhanh với biến động giá.
+ *
  * 3 endpoint HTTP:
  *   GET  /api/vapid-public-key  -> trả VAPID public key cho client dùng khi
  *                                  subscribe PushManager.
@@ -35,12 +47,15 @@
  *   - Lần đầu tiên thấy 1 cảnh báo (chưa có "side" lưu trước đó) chỉ ghi
  *     nhận baseline, KHÔNG báo ngay - tránh báo nhầm ngay khi vừa tạo cảnh
  *     báo lúc giá đã ở phía đó từ trước.
+ *   - Với signals BUY/SELL: chỉ báo khi CHIỀU tín hiệu đảo so với lần báo
+ *     trước (xem ghi chú FIX ở trên) - không báo liên tục khi vẫn cùng chiều.
  *
  * LƯU Ý VỀ GIỚI HẠN FREE TIER CỦA WORKERS KV:
  *   - Free tier: ~100.000 lượt đọc/ngày, ~1.000 lượt ghi/ngày.
- *   - Thiết kế ở đây CHỈ ĐỌC mỗi lần cron chạy (2880 lần/ngày vì chạy 2
- *     lần/phút), và CHỈ GHI khi có thay đổi thật (alert vừa được tạo lần
- *     đầu hoặc vừa triggered) - không ghi mỗi tick.
+ *   - Thiết kế ở đây CHỈ GHI khi có thay đổi thật (alert vừa được tạo lần
+ *     đầu, vừa triggered, hoặc signal vừa đảo chiều) - không ghi mỗi tick.
+ *   - checkAlertsAndNotify chạy 2 lần/phút (2880 lần/ngày), checkSignalsAndNotify
+ *     chỉ chạy 1 lần/phút (1440 lần/ngày) để giảm tổng số operation.
  */
 
 import { buildPushPayload } from '@block65/webcrypto-web-push';
@@ -183,7 +198,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runTwicePerMinute(env));
+    ctx.waitUntil(runCronTick(env));
   },
 };
 
@@ -192,17 +207,22 @@ function sleep(ms) {
 }
 
 /**
- * Cloudflare Cron Trigger tối thiểu là 1 phút (không có field giây), nên để
- * đạt hiệu quả "30 giây/lần" ta chạy kiểm tra giá 2 lần trong CÙNG 1 lần
- * cron/phút, cách nhau 30 giây bằng setTimeout. Thời gian "ngủ" chờ này chỉ
- * tính vào wall time (giới hạn 15 phút cho scheduled handler), KHÔNG tính
- * vào CPU time (giới hạn 10ms/50ms/30s tuỳ plan) - nên vẫn chạy tốt ở free
- * plan miễn là phần tính toán thực sự (JSON, so sánh giá...) vẫn nhỏ.
+ * Cloudflare Cron Trigger tối thiểu là 1 phút (không có field giây).
+ *
+ * - checkAlertsAndNotify (cảnh báo mức giá) vẫn chạy 2 lần/phút (cách nhau
+ *   30s bằng setTimeout) để phản ứng nhanh với biến động giá - thời gian
+ *   "ngủ" chờ này chỉ tính vào wall time (giới hạn 15 phút cho scheduled
+ *   handler), KHÔNG tính vào CPU time.
+ * - checkSignalsAndNotify (tín hiệu BUY/SELL breakout) CHỈ chạy 1 lần/phút
+ *   vì: (1) khung nến ngắn nhất theo dõi là 5 phút nên không cần độ trễ
+ *   30s, (2) mỗi lần chạy đều gọi Yahoo Finance + có thể ghi KV, nên chạy
+ *   2 lần/phút sẽ nhân đôi tải không cần thiết - đây là nguyên nhân chính
+ *   khiến tài khoản chạm % giới hạn Workers KV free tier.
  */
-async function runTwicePerMinute(env) {
+async function runCronTick(env) {
   await Promise.allSettled([checkAlertsAndNotify(env), checkSignalsAndNotify(env)]);
   await sleep(30000);
-  await Promise.allSettled([checkAlertsAndNotify(env), checkSignalsAndNotify(env)]);
+  await checkAlertsAndNotify(env);
 }
 
 async function checkAlertsAndNotify(env) {
@@ -453,7 +473,7 @@ const INTERVAL_MAP = {
 };
 
 /**
- * FIX (đợt fix này): trước đây fetchYahooKlines() được gọi thẳng với
+ * FIX (đợt fix trước): trước đây fetchYahooKlines() được gọi thẳng với
  * symbol dạng sàn (vd "BTCUSDT", "ETHUSDT") - Yahoo Finance KHÔNG hiểu
  * format này (ticker crypto trên Yahoo có dạng "BTC-USD", "ETH-USD"...),
  * nên request luôn thất bại/rỗng và checkSignalsAndNotify() luôn `continue`
@@ -653,15 +673,21 @@ async function checkSignalsAndNotify(env) {
       console.log(
         `[signals-cron][DEBUG] ${symbol} (${yahooSymbol}) entry=${timeframe} higher=${higherTF} ` +
         `lastEntryClose=${lastEntry.close} maxHigh=${maxHigh} minLow=${minLow} direction=${direction} ` +
-        `lastNotifiedTime=${signal.lastNotifiedTime} lastEntryTime=${lastEntry.time}`
+        `lastDirection=${signal.lastDirection} lastEntryTime=${lastEntry.time}`
       );
 
       if (direction === 0) {
         continue;
       }
 
-
-      if (signal.lastNotifiedTime !== lastEntry.time) {
+      // FIX (đợt fix mới nhất): chỉ báo + ghi KV khi CHIỀU tín hiệu thực sự
+      // đảo so với lần báo trước (BUY -> SELL hoặc SELL -> BUY). Trước đây
+      // so sánh theo `lastNotifiedTime !== lastEntry.time` nên MỖI nến mới
+      // đóng thoả điều kiện breakout đều báo lại, kể cả khi vẫn cùng chiều
+      // với tín hiệu đã báo - gây báo liên tục + tốn KV write không cần
+      // thiết. `lastDirection` ban đầu là null nên tín hiệu đầu tiên (BUY
+      // hoặc SELL) vẫn được báo bình thường như cũ.
+      if (signal.lastDirection !== direction) {
         signal.lastNotifiedTime = lastEntry.time;
         signal.lastDirection = direction;
         signalsChanged = true;
